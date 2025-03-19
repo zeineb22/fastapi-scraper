@@ -1,71 +1,51 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from typing import List
-import asyncio
-import logging
-
-# Configuration de base du logging pour obtenir plus de détails en cas d'erreurs
-logging.basicConfig(level=logging.DEBUG)
+from fastapi import FastAPI, HTTPException
+import pandas as pd
+from scraper import scrape_annonces
+import os
 
 app = FastAPI()
 
-# Liste d'annonces simulée
-annonces = []
+# Endpoint pour récupérer toutes les annonces
+from fastapi import FastAPI, HTTPException
+import pandas as pd
+from scraper import scrape_annonces
+import os
 
-# Fonction de scraping simulée
-async def scraping_data():
-    try:
-        logging.debug("Début du scraping...")
-        await asyncio.sleep(3)  # Simule un délai de scraping
-        # Ajout d'une annonce simulée après le délai
-        annonces.append({
-            "region": "Tunis",
-            "marque": "Peugeot",
-            "modele": "308",
-            "prix": "50000",
-            "annee": "2020"
-        })
-        logging.debug("Scraping terminé avec succès.")
-        return "✅ Scraping terminé avec succès."
-    except Exception as e:
-        logging.error(f"Erreur lors du scraping: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur lors du scraping: {str(e)}")
+app = FastAPI()
 
-# Route POST pour démarrer le scraping
-@app.post("/scrape")
-async def scrape_data(background_tasks: BackgroundTasks):
-    """
-    Cette route démarre le scraping en arrière-plan.
-    """
-    try:
-        # Ajout de la tâche de scraping en arrière-plan
-        background_tasks.add_task(scraping_data)
-        logging.debug("Scraping lancé en arrière-plan.")
-        return {"message": "Scraping démarré en arrière-plan."}
-    except Exception as e:
-        logging.error(f"Erreur dans la route de scraping: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur dans la route de scraping: {str(e)}")
-
-# Route GET pour récupérer les annonces
+# Endpoint pour récupérer toutes les annonces
 @app.get("/annonces")
-async def get_annonces():
-    """
-    Cette route permet de récupérer les annonces après un scraping.
-    """
+def get_annonces():
     try:
-        if annonces:
-            return {"annonces": annonces}
-        else:
-            raise HTTPException(status_code=404, detail="Aucune annonce trouvée")
-    except Exception as e:
-        logging.error(f"Erreur dans la récupération des annonces: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur dans la récupération des annonces: {str(e)}")
+        # Vérifiez si le fichier existe
+        if not os.path.exists("annonces_vehicules.csv"):
+            raise HTTPException(status_code=404, detail="Aucune donnée disponible. Veuillez lancer le scraping d'abord.")
 
-# Route d'état pour vérifier si l'application fonctionne correctement
-@app.get("/a")
-async def read_root():
+        # Lire les annonces depuis le fichier CSV
+        df = pd.read_csv("annonces_vehicules.csv")
+
+        # Vérifiez si le fichier est vide
+        if df.empty:
+            raise HTTPException(status_code=404, detail="Aucune donnée disponible. Veuillez lancer le scraping d'abord.")
+
+        # Convertir le DataFrame en JSON
+        return df.to_dict(orient="records")
+    except pd.errors.EmptyDataError:
+        raise HTTPException(status_code=500, detail="Le fichier CSV est vide ou mal formaté.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la lecture du fichier CSV : {str(e)}")
+
+
+# Endpoint pour lancer une nouvelle session de scraping
+@app.post("/scrape")
+def scrape():
     try:
-        return {"message": "L'application fonctionne correctement!"}
+        # Lancer le scraping
+        data = scrape_annonces()
+        return {"message": "Scraping terminé avec succès", "data": data}
     except Exception as e:
-        logging.error(f"Erreur dans la route de vérification: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erreur dans la route de vérification: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
